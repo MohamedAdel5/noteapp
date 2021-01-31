@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<title></title>
+		<meta name="description" content="">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link rel="stylesheet" href="">
+	</head>
+	<body>
+		<div style="border: solid 1px; padding-left: 5px;">
+			<a href="http://127.0.0.1:3000/">Back to home</a>
+		</div>
+		<div style="border: solid 1px; padding-left: 5px;">
+			<h2>Share links</h2>
+			<strong>Edit link</strong>
+			<button id="edit_copy">copy to clipboard</button>
+			<span id="edit_copied" style="display: none;">copied</span><br>
+			<p id="edit_link" style="max-width: 500px; overflow:hidden; white-space: nowrap;  text-overflow: ellipsis;"></p>
+			
+			<strong>View only link</strong>
+			<button id="view_copy">copy to clipboard</button>
+			<span id="view_copied" style="display: none;">copied</span><br>
+			<p id="view_link" style="max-width: 500px; overflow:hidden; white-space: nowrap;  text-overflow: ellipsis;"></p>
+			
+
+
+		</div>
+		<hr>
+		<div style="border: solid 1px; padding-left: 5px;">
+			<h2>Edit my note</h2>
+			<label for="noteTitle">Title</label><input type="text" name="noteTitle" id="noteTitle"><br>
+			<label for="noteBody">Body</label><textarea style="width: 50%; height: auto;" rows="20" name="noteBody" id="noteBody"></textarea><span id="someone_editing" style="display: none;">Someone is editing</span><br><br>
+			click to save note in database <button id="edit_note">save note</button><br>
+			<span id="done_msg" style="display: none;">Saving Done!</span>
+			<span id="fail_msg" style="display: none;">Saving Failed</span>
+			<br><br>
+			
+		</div>
+
+		
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.0/socket.io.js"></script>
+		<script async defer>
+			
+			(async()=>{
+
+				const user = JSON.parse(localStorage.getItem("user"));
+				const auth_jwt = localStorage.getItem("auth_jwt");
+				if(!user || !auth_jwt){
+					window.location.href = "http://127.0.0.1:3000/login";
+				}
+
+				
+				const urlSplit = window.location.href.split('/');
+				const noteID = urlSplit[urlSplit.length-1];
+				const editLink = document.getElementById("edit_link");
+				const viewLink = document.getElementById("view_link");
+				const editCopy = document.getElementById("edit_copy");
+				const editCopied = document.getElementById("edit_copied");
+				const viewCopy = document.getElementById("view_copy");
+				const viewCopied = document.getElementById("view_copied");
+
+				const noteTitle = document.getElementById("noteTitle");
+				const noteBody = document.getElementById("noteBody");
+				const someoneEditing = document.getElementById("someone_editing");
+				const editNote = document.getElementById("edit_note");
+				const doneMsg = document.getElementById("done_msg");
+				const failMsg = document.getElementById("fail_msg");
+
+				let socket;
+
+				try{
+						let res;
+						res = await axios.get(`/api/v1/notes/${noteID}?online=1`, {
+							headers: { Authorization: auth_jwt }
+						});
+						if(res.status !== 200 && res.status !== 304) throw Error("Could not get the note");
+						else {
+							noteTitle.value = res.data.note.noteTitle;
+							noteBody.value = res.data.note.noteBody;
+						}
+						res = await axios.get(`/api/v1/notes/generate-online-note/${noteID}`, {
+							headers: { Authorization: auth_jwt }
+						});
+						if(res.status !== 200 && res.status !== 304) throw Error("Could not generate edit link");
+						else {
+							editLink.innerHTML = res.data.editLink;
+							viewLink.innerHTML = res.data.viewLink;
+						}
+						
+
+						const note_token = editLink.innerHTML.split('?token=')[1];
+						socket = io('ws://127.0.0.1:3000', {
+						path: "/ws/online-note",
+							extraHeaders: {
+								Authorization: `${auth_jwt}`
+							},
+							query: {token: note_token}
+						});
+
+						socket.on("connect_error", err => {
+							throw err;
+						});
+						
+						let delay = null;
+						socket.on("note-update", function(msg) {
+							noteTitle.disabled = true;
+							noteBody.disabled = true;
+							someoneEditing.style.display = "inline";
+
+							msg = JSON.parse(msg);
+							noteTitle.value = msg.noteTitle;
+							noteBody.value = msg.noteBody;
+
+							clearInterval(delay);
+							delay = setTimeout(()=>{
+								noteTitle.disabled = false;
+								noteBody.disabled = false;
+								someoneEditing.style.display = "none";
+							}, 500);
+							
+						});
+
+						noteBody.addEventListener("input", sendChange);
+						noteTitle.addEventListener("input", sendChange);
+
+						editCopy.addEventListener("click", ()=>{
+							const el = document.createElement('textarea');
+							el.value = editLink.innerHTML;
+							document.body.appendChild(el);
+							el.select();
+							document.execCommand('copy');
+							document.body.removeChild(el);
+							editCopied.style.display = "inline";
+							setTimeout(()=>{
+								editCopied.style.display = "none";
+							}, 1500);
+						});
+
+						viewCopy.addEventListener("click", ()=>{
+							const el = document.createElement('textarea');
+							el.value = viewLink.innerHTML;
+							document.body.appendChild(el);
+							el.select();
+							document.execCommand('copy');
+							document.body.removeChild(el);
+							viewCopied.style.display = "inline";
+							setTimeout(()=>{
+								viewCopied.style.display = "none";
+							}, 1500);
+						})
+
+						editNote.addEventListener("click", async()=>{
+							res = await axios.patch(`/api/v1/notes/${noteID}`, {
+								noteTitle: noteTitle.value,
+								noteBody: noteBody.value,
+							},{
+								headers: { Authorization: auth_jwt }
+							});
+							if(res.status !== 200 && res.status !== 304) {
+								throw Error("Could not get the note");
+								failMsg.style.display = "inline";
+								setTimeout(()=>failMsg.style.display = "none", 1000);
+							}
+							else {
+								doneMsg.style.display = "inline";
+								setTimeout(()=>doneMsg.style.display = "none", 1000);
+							}
+						});
+				}
+				catch(err)
+				{
+					console.log(err);
+				}
+
+				function sendChange(value){
+					const msg = {
+						noteTitle: noteTitle.value,
+						noteBody: noteBody.value,
+					}
+					socket.emit("note-update", JSON.stringify(msg));
+				}
+
+
+		})()
+		</script>
+	</body>
+</html>

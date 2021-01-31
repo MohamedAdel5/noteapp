@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<title></title>
+		<meta name="description" content="">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link rel="stylesheet" href="">
+	</head>
+	<body>
+		<div style="border: solid 1px; padding-left: 5px;">
+			<a href="http://127.0.0.1:3000/">Back to home</a>
+		</div>
+		<div style="border: solid 1px; padding-left: 5px;">
+			<h2 id="edit_and_view" style="display: none;">Note Edit/view</h2>
+			<h2 id="view_only" style="display: none;">Note View only</h2>
+
+			<span id="someone_editing" style="display: none;">Someone is editing</span> <br>
+			<label for="noteTitle">Title</label><input type="text" name="noteTitle" id="noteTitle"><br>
+			<label for="noteBody">Body</label><textarea style="width: 50%; height: auto;" rows="20" name="noteBody" id="noteBody"></textarea><br><br>
+			click to save note in database <button id="edit_note">save note</button><br>
+			<span id="done_msg" style="display: none;">Saving Done!</span>
+			<span id="fail_msg" style="display: none;">Saving Failed</span>
+			<br><br>
+
+		</div>
+
+
+		
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.0/socket.io.js"></script>
+
+		
+		<script async defer>
+			(async()=>{
+
+				const user = JSON.parse(localStorage.getItem("user"));
+				const auth_jwt = localStorage.getItem("auth_jwt");
+				if(!user || !auth_jwt){
+					window.location.href = "http://127.0.0.1:3000/login";
+				}
+
+				const urlSplit = window.location.href.split('?token=');
+				const noteToken = urlSplit[1];
+				const urlLeftSplit = urlSplit[0].split('/');
+				const noteID = urlLeftSplit[urlLeftSplit.length - 1];
+
+				const editAndView = document.getElementById("edit_and_view");
+				const viewOnly = document.getElementById("view_only");
+				const noteTitle = document.getElementById("noteTitle");
+				const noteBody = document.getElementById("noteBody");
+				const someoneEditing = document.getElementById("someone_editing");
+				const editNote = document.getElementById("edit_note");
+				const doneMsg = document.getElementById("done_msg");
+				const failMsg = document.getElementById("fail_msg");
+				let editable = null;
+				let socket;
+
+				try{
+
+						socket = io('ws://127.0.0.1:3000', {
+						path: "/ws/online-note",
+							extraHeaders: {
+								Authorization: `${auth_jwt}`
+							},
+							query: {token: noteToken}
+						});
+						socket.on('connect', async () => {
+							const res = await axios.get(`/api/v1/notes/${noteID}?token=${noteToken}&online=1`, {
+								headers: { Authorization: auth_jwt }
+							});
+							if(res.status !== 200 && res.status !== 304) throw Error("Could not get the note");
+							else {
+								noteTitle.value = res.data.note.noteTitle;
+								noteBody.value = res.data.note.noteBody;
+							}
+						});
+						socket.on("connect_error", err => {
+							throw err;
+						});
+						let delay = null;
+						socket.on("note-update", function(msg) {
+							if(editable){
+								noteTitle.disabled = true;
+								noteBody.disabled = true;
+								someoneEditing.style.display = "inline";
+							}
+
+							msg = JSON.parse(msg);
+							noteTitle.value = msg.noteTitle;
+							noteBody.value = msg.noteBody;
+
+							if(editable)
+							{
+								clearInterval(delay);
+								delay = setTimeout(()=>{
+									noteTitle.disabled = false;
+									noteBody.disabled = false;
+									someoneEditing.style.display = "none";
+								}, 500);
+							}
+						});
+
+						const base64Url = noteToken.split(".")[1];
+						const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+						const jsonPayload = decodeURIComponent(
+							atob(base64)
+								.split("")
+								.map(function(c) {
+									return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+								})
+								.join("")
+						);
+						const decoded = JSON.parse(jsonPayload);
+						if(decoded.editable === 1)
+						{
+							editable = true;
+							editAndView.style.display = "block";
+							noteBody.addEventListener("input", sendChange);
+							noteTitle.addEventListener("input", sendChange);
+							editNote.addEventListener("click", async()=>{
+							res = await axios.patch(`/api/v1/notes/${noteID}?token=${noteToken}`, {
+								noteTitle: noteTitle.value,
+								noteBody: noteBody.value,
+							},{
+								headers: { Authorization: auth_jwt }
+							});
+							if(res.status !== 200 && res.status !== 304) {
+								throw Error("Could not get the note");
+								failMsg.style.display = "inline";
+								setTimeout(()=>failMsg.style.display = "none", 1000);
+							}
+							else {
+								doneMsg.style.display = "inline";
+								setTimeout(()=>doneMsg.style.display = "none", 1000);
+							}
+						});
+						}
+						else{
+							editable = false;
+							viewOnly.style.display = "block";
+							noteTitle.disabled = true;
+							noteBody.disabled = true;
+							editNote.disabled = true;
+							someoneEditing.style.display = "none";
+						}
+
+
+
+
+
+				}
+				catch(err)
+				{
+					console.log(err);
+				}
+
+				function sendChange(value){
+					const msg = {
+						noteTitle: noteTitle.value,
+						noteBody: noteBody.value,
+					}
+					socket.emit("note-update", JSON.stringify(msg));
+				}
+
+
+		})()
+		</script>
+	</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<title>Signup</title>
+		<meta name="description" content="">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link rel="stylesheet" href="">
+	</head>
+	<body>
+		<!-- <form method="post"> -->
+			<label for="name">Name</label> <input type="text" name="name" id="name"><span>Name must be only English or Arabic letters and special characters(space, ',  -) and must not exceed 50 characters</span><br>
+			<label for="email">Email</label> <input type="email" name="email" id="email"><span>Email must be in correct format</span><br>
+			<label for="password">Password</label> <input type="password" name="password" id="password"> <span>Password must be 8-50 characters</span><br>
+			<button id="signup">Signup</button>
+			<span id="fail_msg" style="display: none;">Failed to signup</span>
+
+		<!-- </form> -->
+		
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+		<script  async defer>
+			const name = document.getElementById("name");
+			const email = document.getElementById("email");
+			const password = document.getElementById("password");
+			const btn = document.getElementById("signup");
+			const failMsg = document.getElementById("fail_msg");
+
+
+			btn.addEventListener("click", async ()=>{
+				try{
+					const res = await axios.post('http://127.0.0.1:3000/api/v1/authentication/signup', {
+						name: name.value,
+						email: email.value,
+						password: password.value
+					});
+					if(res.status !== 200 && res.status !== 304) {
+						failMsg.style.display = "inline";
+						throw Error("Could not signup");
+					}
+					else {
+						localStorage.setItem("auth_jwt", res.data.token);
+						localStorage.setItem("user", JSON.stringify(res.data.user));
+						window.location.href = "http://127.0.0.1:3000/";
+					}
+				}
+				catch(err)
+				{
+					failMsg.style.display = "inline";
+					console.log(err);
+				}
+			});
+
+		</script>
+	</body>
+</html>
