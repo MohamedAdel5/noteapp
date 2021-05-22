@@ -35,6 +35,9 @@
 		<script async defer>
 			(async()=>{
 
+				// A user is redirected to this html page if he is editing/viewing another one's note.
+
+				// Check that the user is logged in. Otherwise redirect to login page.
 				const user = JSON.parse(localStorage.getItem("user"));
 				const auth_jwt = localStorage.getItem("auth_jwt");
 				if(!user || !auth_jwt){
@@ -59,6 +62,7 @@
 
 				try{
 
+					// Establishing websocket connection with the server and passing the note token(edit or view)
 						socket = io('ws://127.0.0.1:3000', {
 						path: "/ws/online-note",
 							extraHeaders: {
@@ -66,7 +70,9 @@
 							},
 							query: {token: noteToken}
 						});
+						
 						socket.on('connect', async () => {
+							// Get the note
 							const res = await axios.get(`/api/v1/notes/${noteID}?token=${noteToken}&online=1`, {
 								headers: { Authorization: auth_jwt }
 							});
@@ -76,10 +82,13 @@
 								noteBody.value = res.data.note.noteBody;
 							}
 						});
+						
 						socket.on("connect_error", err => {
 							throw err;
 						});
+						
 						let delay = null;
+						
 						socket.on("note-update", function(msg) {
 							if(editable){
 								noteTitle.disabled = true;
@@ -102,6 +111,9 @@
 							}
 						});
 
+						// Parse note token and check if it is view or edit to enable/disable writing
+						// Note that if the note token is a view token and you are trying to
+						// send edit data through websocket to the server it will not be accepted at the backend
 						const base64Url = noteToken.split(".")[1];
 						const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
 						const jsonPayload = decodeURIComponent(
@@ -113,29 +125,34 @@
 								.join("")
 						);
 						const decoded = JSON.parse(jsonPayload);
+
 						if(decoded.editable === 1)
 						{
 							editable = true;
 							editAndView.style.display = "block";
+
+							//Send data to server through websocket on any update in note body or title
 							noteBody.addEventListener("input", sendChange);
 							noteTitle.addEventListener("input", sendChange);
+
+							// send request to save the current note in db
 							editNote.addEventListener("click", async()=>{
-							res = await axios.patch(`/api/v1/notes/${noteID}?token=${noteToken}`, {
-								noteTitle: noteTitle.value,
-								noteBody: noteBody.value,
-							},{
-								headers: { Authorization: auth_jwt }
+								res = await axios.patch(`/api/v1/notes/${noteID}?token=${noteToken}`, {
+									noteTitle: noteTitle.value,
+									noteBody: noteBody.value,
+								},{
+									headers: { Authorization: auth_jwt }
+								});
+								if(res.status !== 200 && res.status !== 304) {
+									throw Error("Could not get the note");
+									failMsg.style.display = "inline";
+									setTimeout(()=>failMsg.style.display = "none", 1000);
+								}
+								else {
+									doneMsg.style.display = "inline";
+									setTimeout(()=>doneMsg.style.display = "none", 1000);
+								}
 							});
-							if(res.status !== 200 && res.status !== 304) {
-								throw Error("Could not get the note");
-								failMsg.style.display = "inline";
-								setTimeout(()=>failMsg.style.display = "none", 1000);
-							}
-							else {
-								doneMsg.style.display = "inline";
-								setTimeout(()=>doneMsg.style.display = "none", 1000);
-							}
-						});
 						}
 						else{
 							editable = false;
@@ -156,6 +173,7 @@
 					console.log(err);
 				}
 
+				// send data to server through websocket
 				function sendChange(value){
 					const msg = {
 						noteTitle: noteTitle.value,

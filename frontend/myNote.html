@@ -46,6 +46,9 @@
 			
 			(async()=>{
 
+				// A user is redirected to this html page if he is editing his own note.
+
+				// Check that the user is logged in. Otherwise redirect to login page.
 				const user = JSON.parse(localStorage.getItem("user"));
 				const auth_jwt = localStorage.getItem("auth_jwt");
 				if(!user || !auth_jwt){
@@ -73,6 +76,7 @@
 
 				try{
 						let res;
+						// Get my note (by the id given in the url params)
 						res = await axios.get(`/api/v1/notes/${noteID}?online=1`, {
 							headers: { Authorization: auth_jwt }
 						});
@@ -81,6 +85,8 @@
 							noteTitle.value = res.data.note.noteTitle;
 							noteBody.value = res.data.note.noteBody;
 						}
+						
+						// Get view and edit urls for the note (to share it with other users if needed)
 						res = await axios.get(`/api/v1/notes/generate-online-note/${noteID}`, {
 							headers: { Authorization: auth_jwt }
 						});
@@ -91,7 +97,10 @@
 						}
 						
 
+						// Get the edit token from the edit url
 						const note_token = editLink.innerHTML.split('?token=')[1];
+
+						// Establishing websocket connection with the server and passing the edit token to be able to edit
 						socket = io('ws://127.0.0.1:3000', {
 						path: "/ws/online-note",
 							extraHeaders: {
@@ -105,6 +114,8 @@
 						});
 						
 						let delay = null;
+
+						// disable writing on receiving any updates on the note from the server through the websocket
 						socket.on("note-update", function(msg) {
 							noteTitle.disabled = true;
 							noteBody.disabled = true;
@@ -123,35 +134,11 @@
 							
 						});
 
+						//Send data to server through websocket on any update in note body or title
 						noteBody.addEventListener("input", sendChange);
 						noteTitle.addEventListener("input", sendChange);
 
-						editCopy.addEventListener("click", ()=>{
-							const el = document.createElement('textarea');
-							el.value = editLink.innerHTML;
-							document.body.appendChild(el);
-							el.select();
-							document.execCommand('copy');
-							document.body.removeChild(el);
-							editCopied.style.display = "inline";
-							setTimeout(()=>{
-								editCopied.style.display = "none";
-							}, 1500);
-						});
-
-						viewCopy.addEventListener("click", ()=>{
-							const el = document.createElement('textarea');
-							el.value = viewLink.innerHTML;
-							document.body.appendChild(el);
-							el.select();
-							document.execCommand('copy');
-							document.body.removeChild(el);
-							viewCopied.style.display = "inline";
-							setTimeout(()=>{
-								viewCopied.style.display = "none";
-							}, 1500);
-						})
-
+						// send request to save the current note in db
 						editNote.addEventListener("click", async()=>{
 							res = await axios.patch(`/api/v1/notes/${noteID}`, {
 								noteTitle: noteTitle.value,
@@ -169,12 +156,42 @@
 								setTimeout(()=>doneMsg.style.display = "none", 1000);
 							}
 						});
+
+						// copy edit link to clipboard
+						editCopy.addEventListener("click", ()=>{
+							const el = document.createElement('textarea');
+							el.value = editLink.innerHTML;
+							document.body.appendChild(el);
+							el.select();
+							document.execCommand('copy');
+							document.body.removeChild(el);
+							editCopied.style.display = "inline";
+							setTimeout(()=>{
+								editCopied.style.display = "none";
+							}, 1500);
+						});
+						
+						// copy view link to clipboard
+						viewCopy.addEventListener("click", ()=>{
+							const el = document.createElement('textarea');
+							el.value = viewLink.innerHTML;
+							document.body.appendChild(el);
+							el.select();
+							document.execCommand('copy');
+							document.body.removeChild(el);
+							viewCopied.style.display = "inline";
+							setTimeout(()=>{
+								viewCopied.style.display = "none";
+							}, 1500);
+						})
+
 				}
 				catch(err)
 				{
 					console.log(err);
 				}
 
+				// send data to server through websocket
 				function sendChange(value){
 					const msg = {
 						noteTitle: noteTitle.value,
